@@ -35,7 +35,7 @@ type Span struct {
 	parent           *Span
 	requestCounter   *prometheus.CounterVec
 	latencyHistogram *prometheus.HistogramVec
-	// TODO(leffler): Server exclusive latency.
+	clientElapsed    float64
 }
 
 var defaultService = ""
@@ -67,6 +67,7 @@ func StartClientSpan(ctx context.Context, parent *Span, service, method string) 
 		parent:           parent,
 		requestCounter:   clientRequests,
 		latencyHistogram: clientLatency,
+		clientElapsed:    0,
 	}
 	span.SetTag("span.kind", "client")
 	span.span, _ = opentracing.StartSpanFromContext(ctx, strings.Join(labels, "_"))
@@ -77,12 +78,18 @@ func (span *Span) SetTag(key, value string) {
 	span.span.SetTag(key, value)
 }
 
-// Finish tarminates the span and observes metrics. Returns elapsed time in seconds.
+// Finish terminates the span and observes metrics. Returns elapsed time in seconds.
 func (span *Span) Finish() float64 {
 	span.span.Finish()
 	span.requestCounter.WithLabelValues(span.service, span.method).Inc()
 	elapsed := time.Now().Sub(span.start).Seconds()
 	span.latencyHistogram.WithLabelValues(span.service, span.method).Observe(elapsed)
-	// TODO(leffler): Update parent span.
+	if span.parent == nil {
+		exclusive := elapsed - span.clientElapsed
+		serverExclusiveLatency.WithLabelValues(span.service, span.method).Observe(
+			exclusive)
+	} else {
+		span.parent.clientElapsed += elapsed
+	}
 	return elapsed
 }
