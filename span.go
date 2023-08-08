@@ -27,17 +27,25 @@ import (
 type Span struct {
 	start            time.Time
 	span             opentracing.Span
-	labels           []string
+	service          string
+	method           string
 	parent           *Span
 	requestCounter   *prometheus.CounterVec
 	latencyHistogram *prometheus.HistogramVec
 	// TODO(leffler): Server exclusive latency.
 }
 
-func StartServerSpan(ctx context.Context, labels []string) *Span {
+var defaultService = "service"
+
+func SetService(s string) {
+	defaultService = s
+}
+
+func StartServerSpan(ctx context.Context, method string) *Span {
 	span := Span{
 		start:            time.Now(),
-		labels:           labels,
+		service:          defaultService,
+		method:           method,
 		parent:           nil,
 		requestCounter:   serverRequests,
 		latencyHistogram: serverLatency,
@@ -46,10 +54,11 @@ func StartServerSpan(ctx context.Context, labels []string) *Span {
 	return &span
 }
 
-func StartClientSpan(ctx context.Context, parent *Span, labels []string) *Span {
+func StartClientSpan(ctx context.Context, parent *Span, service, method string) *Span {
 	span := Span{
 		start:            time.Now(),
-		labels:           labels,
+		service:          service,
+		method:           method,
 		parent:           parent,
 		requestCounter:   clientRequests,
 		latencyHistogram: clientLatency,
@@ -65,9 +74,9 @@ func (span *Span) SetTag(key, value string) {
 // Finish tarminates the span and observes metrics. Returns elapsed time in seconds.
 func (span *Span) Finish() float64 {
 	span.span.Finish()
-	span.requestCounter.WithLabelValues(span.labels...).Inc()
+	span.requestCounter.WithLabelValues(span.service, span.method).Inc()
 	elapsed := time.Now().Sub(span.start).Seconds()
-	span.latencyHistogram.WithLabelValues(span.labels...).Observe(elapsed)
+	span.latencyHistogram.WithLabelValues(span.service, span.method).Observe(elapsed)
 	// TODO(leffler): Update parent span.
 	return elapsed
 }
