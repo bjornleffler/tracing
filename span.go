@@ -16,11 +16,14 @@ package tracing
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Span is a wrapper that generates both Opentracing traces and Prometheus metrics.
@@ -35,10 +38,12 @@ type Span struct {
 	// TODO(leffler): Server exclusive latency.
 }
 
-var defaultService = "service"
+var defaultService = ""
 
-func SetService(s string) {
-	defaultService = s
+func Configure(service string, port int) {
+	defaultService = service
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 }
 
 func StartServerSpan(ctx context.Context, method string) *Span {
@@ -63,6 +68,7 @@ func StartClientSpan(ctx context.Context, parent *Span, service, method string) 
 		requestCounter:   clientRequests,
 		latencyHistogram: clientLatency,
 	}
+	span.SetTag("span.kind", "client")
 	span.span, _ = opentracing.StartSpanFromContext(ctx, strings.Join(labels, "_"))
 	return &span
 }
